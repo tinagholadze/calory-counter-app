@@ -1,0 +1,7 @@
+{
+  "name": "plate-calorie-app",
+  "description": "Provides information for Vercel: the app's name, version and Node.js version.",
+  "version": "1.0.0",
+  "private": true,
+  "engines": { "node": ">=20" }
+}
