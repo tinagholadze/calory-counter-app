@@ -1,0 +1,366 @@
+<!doctype html>
+<!--
+  The file has three parts:
+
+  style  = the look (colors, fonts, spacing)
+
+  body   = the screens:
+           - welcome message (enter your password once)
+           - today: everything you saved today, all calories counted
+           - photo upload button to add a meal
+           - daily log, grouped by date
+
+  script = the brain:
+           - lets you pick a meal photo and shrinks it
+           - sends the photo to our server function, api/analyze.js
+           - api/analyze.js adds the secret API key and the prompt,
+             and sends the request to Claude
+           - Claude does the calculation and sends back the results
+           - the page shows the results in the app
+-->
+<html lang="en">
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Plate</title>
+<meta name="theme-color" content="#f6f3ee">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Plate">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* ============ COLORS (light + dark) ============ */
+  :root {
+    --bg: #f6f3ee; --card: #ffffff; --ink: #1f1c18; --muted: #7a7268;
+    --line: #e8e2d8; --accent: #c8553d; --accent-ink: #ffffff;
+    --protein: #4f7cac; --carbs: #d9a441; --fat: #8a6fb0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161412; --card: #201d1a; --ink: #f2ede6; --muted: #a39a8e;
+      --line: #322e29; --accent: #e07259; --accent-ink: #1a1512;
+      --protein: #7aa3d1; --carbs: #e6bd66; --fat: #b19ad6;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: Inter, system-ui, sans-serif; font-size: 16px; line-height: 1.45;
+    padding: max(20px, env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom));
+    max-width: 520px; margin: 0 auto;
+  }
+  h1, h2, .big { font-family: Fraunces, Georgia, serif; font-weight: 600; letter-spacing: -0.01em; }
+  h1 { font-size: 30px; }
+  h2 { font-size: 20px; margin-bottom: 12px; }
+  .muted { color: var(--muted); font-size: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 18px; margin-top: 16px; }
+  button {
+    font: inherit; font-weight: 600; border: 0; border-radius: 14px; cursor: pointer;
+    padding: 14px 18px; background: var(--accent); color: var(--accent-ink); width: 100%;
+  }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+  button.small { width: auto; padding: 6px 10px; font-size: 13px; border-radius: 10px; }
+  button:disabled { opacity: .5; }
+  input[type=password] {
+    font: inherit; width: 100%; padding: 14px; border-radius: 14px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink); margin: 12px 0;
+  }
+  .hidden { display: none !important; }
+  header { display: flex; justify-content: space-between; align-items: baseline; }
+
+  /* Today summary */
+  .today-kcal { font-size: 44px; line-height: 1; }
+  .macros { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
+  .macro { border-radius: 12px; padding: 10px; background: var(--bg); }
+  .macro b { display: block; font-size: 18px; }
+  .macro span { font-size: 12px; color: var(--muted); }
+  .macro::before { content: ""; display: block; width: 18px; height: 4px; border-radius: 2px; margin-bottom: 8px; }
+  .macro.p::before { background: var(--protein); } .macro.c::before { background: var(--carbs); } .macro.f::before { background: var(--fat); }
+
+  /* Photo + result */
+  #preview { width: 100%; border-radius: 14px; margin-bottom: 14px; max-height: 320px; object-fit: cover; }
+  .spinner { width: 22px; height: 22px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 10px; }
+  th { text-align: right; color: var(--muted); font-weight: 500; font-size: 12px; padding-bottom: 6px; }
+  th:first-child, td:first-child { text-align: left; }
+  td { text-align: right; padding: 7px 0; border-top: 1px solid var(--line); }
+  tr.total td { font-weight: 600; }
+  .badge { display: inline-block; font-size: 12px; padding: 3px 9px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); }
+  .notes { font-size: 14px; color: var(--muted); margin-top: 12px; }
+  .row { display: flex; gap: 10px; margin-top: 14px; }
+  .error { color: var(--accent); font-size: 14px; margin-top: 10px; }
+
+  /* Log */
+  .entry { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+  .entry:first-of-type { border-top: 0; }
+  .entry img { width: 48px; height: 48px; border-radius: 10px; object-fit: cover; flex: none; }
+  .entry .meta { flex: 1; min-width: 0; }
+  .entry .meta div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .day { margin-top: 18px; display: flex; justify-content: space-between; font-weight: 600; font-size: 14px; }
+  .day:first-child { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<!-- ============ SCREEN 1: password (shown only once per phone) ============ -->
+<section id="login" class="card hidden">
+  <h2>Welcome</h2>
+  <p class="muted">Enter your app password. It's saved on this phone so you only do this once.</p>
+  <input id="pw" type="password" placeholder="Password" autocomplete="current-password">
+  <button id="pwBtn">Continue</button>
+  <p id="pwErr" class="error hidden"></p>
+</section>
+
+<!-- ============ SCREEN 2: the app ============ -->
+<main id="app" class="hidden">
+  <header>
+    <h1>Plate</h1>
+    <span class="muted" id="todayDate"></span>
+  </header>
+
+  <!-- Today's totals -->
+  <section class="card">
+    <div class="muted">Today</div>
+    <div class="big today-kcal"><span id="tKcal">0</span> <span class="muted" style="font-family:Inter">kcal</span></div>
+    <div class="macros">
+      <div class="macro p"><b id="tP">0 g</b><span>Protein</span></div>
+      <div class="macro c"><b id="tC">0 g</b><span>Carbs</span></div>
+      <div class="macro f"><b id="tF">0 g</b><span>Fat</span></div>
+    </div>
+  </section>
+
+  <!-- Add a meal -->
+  <section class="card">
+    <input id="file" type="file" accept="image/*" class="hidden">
+    <button id="snapBtn">📷 Add a meal photo</button>
+
+    <div id="working" class="hidden" style="text-align:center;margin-top:16px">
+      <div class="spinner"></div><div class="muted">Claude is looking at your meal…</div>
+    </div>
+    <p id="err" class="error hidden"></p>
+
+    <div id="result" class="hidden" style="margin-top:16px">
+      <img id="preview" alt="Your meal">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="big" style="font-size:28px"><span id="rKcal"></span> kcal</div>
+        <span class="badge" id="rConf"></span>
+      </div>
+      <table>
+        <thead><tr><th>Food</th><th>g</th><th>kcal</th><th>P</th><th>C</th><th>F</th></tr></thead>
+        <tbody id="rRows"></tbody>
+      </table>
+      <p class="notes" id="rNotes"></p>
+      <p class="muted" id="rCost" style="font-size:12px;margin-top:8px"></p>
+      <div class="row">
+        <button class="ghost" id="discardBtn">Discard</button>
+        <button id="saveBtn">Add to today</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- History -->
+  <section class="card">
+    <h2>Log</h2>
+    <div id="log"><p class="muted">No meals yet. Add your first photo above.</p></div>
+  </section>
+
+  <p class="muted" style="text-align:center;margin-top:20px;font-size:12px">
+    Estimates from a photo, typically ±20–30%. Your log is stored on this phone only.
+  </p>
+</main>
+
+<script>
+// =====================================================================
+// SETTINGS
+// =====================================================================
+const PRICE_IN = 0.10;   // Haiku 5.5: $ per million input tokens
+const PRICE_OUT = 0.50;  // Haiku 5.5: $ per million output tokens
+const MAX_SIDE = 1024;   // photos are shrunk to this size before sending (saves tokens)
+
+// =====================================================================
+// SAFE STORAGE (the log lives in this phone's browser)
+// =====================================================================
+const store = {
+  get(key, fallback) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; } },
+  set(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); return true; } catch { return false; } }
+};
+let log = store.get("plate.log", []);
+let password = store.get("plate.pw", "");
+let pending = null; // the meal currently shown, not yet saved
+
+const $ = (id) => document.getElementById(id);
+const round = (n) => Math.round(Number(n) || 0);
+const dayKey = (d) => new Date(d).toLocaleDateString("en-CA"); // YYYY-MM-DD
+
+// =====================================================================
+// STARTUP: show login or app
+// =====================================================================
+function start() {
+  if (password) { $("login").classList.add("hidden"); $("app").classList.remove("hidden"); render(); }
+  else { $("login").classList.remove("hidden"); $("app").classList.add("hidden"); }
+}
+$("pwBtn").onclick = () => {
+  const v = $("pw").value.trim();
+  if (!v) return;
+  password = v; store.set("plate.pw", v); start();
+};
+$("pw").addEventListener("keydown", (e) => { if (e.key === "Enter") $("pwBtn").click(); });
+
+// =====================================================================
+// STEP 1: pick a photo and shrink it
+// =====================================================================
+$("snapBtn").onclick = () => $("file").click();
+$("file").onchange = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    const { dataUrl, thumb } = await shrink(file);
+    await analyze(dataUrl, thumb);
+  } catch (err) {
+    showError("Couldn't open that photo. Try a JPG or PNG.");
+  }
+};
+
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+function drawScaled(img, maxSide, quality) {
+  const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+  const c = document.createElement("canvas");
+  c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", quality);
+}
+async function shrink(file) {
+  const img = await loadImage(file);
+  return { dataUrl: drawScaled(img, MAX_SIDE, 0.85), thumb: drawScaled(img, 120, 0.7) };
+}
+
+// =====================================================================
+// STEP 2: send it to our server function, which asks Claude
+// =====================================================================
+async function analyze(dataUrl, thumb) {
+  hide("result"); hide("err"); show("working"); $("snapBtn").disabled = true;
+  try {
+    const res = await fetch("/api/analyze", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-app-password": password },
+      body: JSON.stringify({ image: dataUrl.split(",")[1], mediaType: "image/jpeg" })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      store.set("plate.pw", ""); password = "";
+      $("pwErr").textContent = "That password didn't work. Try again.";
+      show("pwErr"); start(); return;
+    }
+    if (!res.ok) throw new Error(data.error || "Something went wrong");
+    pending = { ...data, thumb, preview: dataUrl, time: Date.now() };
+    showResult(pending);
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    hide("working"); $("snapBtn").disabled = false;
+  }
+}
+
+// =====================================================================
+// STEP 3: show the answer
+// =====================================================================
+function costOf(usage) {
+  return (usage.input_tokens * PRICE_IN + usage.output_tokens * PRICE_OUT) / 1e6;
+}
+function showResult(m) {
+  const r = m.result, t = r.total || {};
+  $("preview").src = m.preview;
+  $("rKcal").textContent = round(t.calories);
+  $("rConf").textContent = (r.confidence || "?") + " confidence";
+  $("rRows").innerHTML = (r.items || []).map(i =>
+    `<tr><td>${esc(i.name)}</td><td>${round(i.grams)}</td><td>${round(i.calories)}</td><td>${round(i.protein_g)}</td><td>${round(i.carbs_g)}</td><td>${round(i.fat_g)}</td></tr>`
+  ).join("") + `<tr class="total"><td>Total</td><td></td><td>${round(t.calories)}</td><td>${round(t.protein_g)}</td><td>${round(t.carbs_g)}</td><td>${round(t.fat_g)}</td></tr>`;
+  $("rNotes").textContent = r.notes || "";
+  const c = costOf(m.usage);
+  $("rCost").textContent = `${m.usage.input_tokens} in + ${m.usage.output_tokens} out tokens · $${c.toFixed(5)} (${(c * 100).toFixed(3)} ¢)`;
+  $("saveBtn").disabled = !(r.items && r.items.length);
+  show("result");
+}
+$("discardBtn").onclick = () => { pending = null; hide("result"); };
+
+// =====================================================================
+// STEP 4: save to the daily log
+// =====================================================================
+$("saveBtn").onclick = () => {
+  if (!pending) return;
+  const t = pending.result.total || {};
+  const name = (pending.result.items || []).map(i => i.name).join(", ");
+  log.unshift({
+    id: pending.time, time: pending.time, name, thumb: pending.thumb,
+    kcal: round(t.calories), p: round(t.protein_g), c: round(t.carbs_g), f: round(t.fat_g),
+    cost: costOf(pending.usage)
+  });
+  if (!store.set("plate.log", log)) {
+    log = log.slice(0, 200); // phone storage full: keep the newest 200 meals
+    store.set("plate.log", log);
+  }
+  pending = null; hide("result"); render();
+};
+
+function removeEntry(id) {
+  if (!confirm("Remove this meal?")) return;
+  log = log.filter(e => e.id !== id); store.set("plate.log", log); render();
+}
+
+// =====================================================================
+// DRAW today's totals and the history
+// =====================================================================
+function render() {
+  const today = dayKey(Date.now());
+  $("todayDate").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" });
+  const todays = log.filter(e => dayKey(e.time) === today);
+  const sum = (k) => todays.reduce((a, e) => a + e[k], 0);
+  $("tKcal").textContent = sum("kcal");
+  $("tP").textContent = sum("p") + " g"; $("tC").textContent = sum("c") + " g"; $("tF").textContent = sum("f") + " g";
+
+  if (!log.length) { $("log").innerHTML = '<p class="muted">No meals yet. Add your first photo above.</p>'; return; }
+  const days = {};
+  log.forEach(e => (days[dayKey(e.time)] ||= []).push(e));
+  $("log").innerHTML = Object.keys(days).sort().reverse().map(d => {
+    const items = days[d];
+    const total = items.reduce((a, e) => a + e.kcal, 0);
+    const label = d === today ? "Today" : new Date(d + "T12:00").toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+    return `<div class="day"><span>${label}</span><span>${total} kcal</span></div>` + items.map(e => `
+      <div class="entry">
+        <img src="${e.thumb}" alt="">
+        <div class="meta">
+          <div>${esc(e.name)}</div>
+          <div class="muted">${new Date(e.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${e.kcal} kcal · P${e.p} C${e.c} F${e.f}</div>
+        </div>
+        <button class="ghost small" onclick="removeEntry(${e.id})">✕</button>
+      </div>`).join("");
+  }).join("");
+}
+
+// =====================================================================
+// small helpers
+// =====================================================================
+function show(id) { $(id).classList.remove("hidden"); }
+function hide(id) { $(id).classList.add("hidden"); }
+function showError(msg) { $("err").textContent = msg; show("err"); }
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+start();
+</script>
+</body>
+</html>

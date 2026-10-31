@@ -1,0 +1,10 @@
+{
+  "name": "Plate – Calorie Counter",
+  "short_name": "Plate",
+  "description": "Snap a meal photo and Claude estimates calories, protein, carbs and fat. This file lets your phone install the page as an app: its name, icon, colors and full-screen mode.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f3ee",
+  "theme_color": "#f6f3ee",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
